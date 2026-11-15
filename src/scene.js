@@ -1,32 +1,39 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export class BattleArena {
   constructor(container, data) {
     this.container = container;
-    this.data = data;
+    this.data = data || { totalContributions: 17, weeks: [] };
     this.width = container.clientWidth || 1280;
     this.height = container.clientHeight || 480;
 
+    this.soldiers = [];
+    this.mixers = [];
+    this.tracers = [];
+    this.sparks = [];
+
     this.initScene();
-    this.buildTacticalGrid();
-    this.buildSoldierRigs();
-    this.buildParticleSystems();
     this.setupLighting();
+    this.buildAirfieldGround();
+    this.buildContainerGrid();
+    this.loadSoldiers();
+    this.buildCombatFx();
   }
 
   initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0d1117);
-    this.scene.fog = new THREE.FogExp2(0x0d1117, 0.015);
+    // High-visibility tactical atmosphere (Erangel Military Field)
+    this.scene.background = new THREE.Color(0x0f172a); // Deep slate (not pitch black)
 
-    // Isometric Orthographic Camera for perfect technical framing
+    // True Isometric Camera with wider coverage and closer action
     const aspect = this.width / this.height;
-    const d = 18;
-    this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+    const d = 11.8;
+    this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 600);
 
-    // Classic true isometric orientation (35.264 deg pitch, 45 deg yaw)
-    this.camera.position.set(28, 26, 28);
-    this.camera.lookAt(0, 0, 0);
+    // Isometric orientation: 35.264° pitch, 45° yaw
+    this.camera.position.set(24, 21, 24);
+    this.camera.lookAt(1.5, 1.2, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
     this.renderer.setSize(this.width, this.height);
@@ -34,51 +41,56 @@ export class BattleArena {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.65; // High clarity and brightness
 
     this.container.appendChild(this.renderer.domElement);
   }
 
   setupLighting() {
-    // Ambient tactical fill
-    const ambient = new THREE.AmbientLight(0x1e293b, 1.8);
-    this.scene.add(ambient);
-
-    // Moonlight / Sky directional Key Light
-    const sunLight = new THREE.DirectionalLight(0x94a3b8, 2.5);
-    sunLight.position.set(20, 40, 20);
+    // 1. Direct Sunlight (High intensity, casting crisp shadows)
+    const sunLight = new THREE.DirectionalLight(0xfffbeb, 4.2);
+    sunLight.position.set(28, 48, 22);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
     sunLight.shadow.camera.near = 5;
-    sunLight.shadow.camera.far = 100;
-    const d = 25;
+    sunLight.shadow.camera.far = 140;
+    const d = 32;
     sunLight.shadow.camera.left = -d;
     sunLight.shadow.camera.right = d;
     sunLight.shadow.camera.top = d;
     sunLight.shadow.camera.bottom = -d;
-    sunLight.shadow.bias = -0.001;
+    sunLight.shadow.bias = -0.0003;
     this.scene.add(sunLight);
 
-    // Cyan Tactical Rim Light
-    const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.2);
-    rimLight.position.set(-30, 15, -20);
+    // 2. High-clarity Sky Fill Ambient Light
+    const ambient = new THREE.AmbientLight(0x94a3b8, 2.2);
+    this.scene.add(ambient);
+
+    // 3. Cyan Tactical Edge / Rim Light
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 2.0);
+    rimLight.position.set(-30, 22, -22);
     this.scene.add(rimLight);
 
-    // Dynamic Muzzle Flash PointLights
-    this.muzzleA = new THREE.PointLight(0x38bdf8, 0, 10);
-    this.scene.add(this.muzzleA);
+    // 4. Warm Ground Bounce Fill Light
+    const bounceLight = new THREE.DirectionalLight(0xfde68a, 0.8);
+    bounceLight.position.set(0, -10, 0);
+    this.scene.add(bounceLight);
 
-    this.muzzleB = new THREE.PointLight(0xf59e0b, 0, 10);
-    this.scene.add(this.muzzleB);
+    // 5. Dynamic Muzzle Flash PointLights
+    this.muzzleLightA = new THREE.PointLight(0x38bdf8, 0, 16);
+    this.scene.add(this.muzzleLightA);
+
+    this.muzzleLightB = new THREE.PointLight(0xf59e0b, 0, 16);
+    this.scene.add(this.muzzleLightB);
   }
 
-  buildTacticalGrid() {
-    // Dark Asphalt / Concrete Floor with subtle tactical markings
-    const groundGeo = new THREE.PlaneGeometry(65, 24);
+  buildAirfieldGround() {
+    // Military Concrete Apron (High visibility slate)
+    const groundGeo = new THREE.PlaneGeometry(68, 26);
     const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x090d16,
-      roughness: 0.85,
+      color: 0x1e293b,
+      roughness: 0.75,
       metalness: 0.2
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -86,338 +98,442 @@ export class BattleArena {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Subtle tactical grid border line
-    const gridHelper = new THREE.GridHelper(56, 56, 0x1e293b, 0x111827);
-    gridHelper.position.y = 0.01;
-    this.scene.add(gridHelper);
+    // Tactical Yellow Hazard Border Lines
+    const lineGeo = new THREE.PlaneGeometry(64, 0.28);
+    const lineMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      roughness: 0.5,
+      emissive: 0xfbbf24,
+      emissiveIntensity: 0.3
+    });
+    const lineTop = new THREE.Mesh(lineGeo, lineMat);
+    lineTop.rotation.x = -Math.PI / 2;
+    lineTop.position.set(0, 0.02, 6.2);
+    this.scene.add(lineTop);
 
-    // Contribution Blocks
+    const lineBottom = new THREE.Mesh(lineGeo, lineMat);
+    lineBottom.rotation.x = -Math.PI / 2;
+    lineBottom.position.set(0, 0.02, -6.2);
+    this.scene.add(lineBottom);
+
+    // Center Taxiway Runway Dashes
+    for (let x = -28; x <= 28; x += 4.0) {
+      const dashGeo = new THREE.PlaneGeometry(2.0, 0.22);
+      const dashMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 });
+      const dash = new THREE.Mesh(dashGeo, dashMat);
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(x, 0.02, 0);
+      this.scene.add(dash);
+    }
+  }
+
+  buildContainerGrid() {
     const weeks = this.data.weeks || [];
-    this.blocks = [];
-    const blockGeo = new THREE.BoxGeometry(0.72, 1, 0.72);
+    const numWeeks = weeks.length || 53;
+    const daysPerWeek = 7;
 
-    // Pre-allocated materials for performance
-    const matEmpty = new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 0.9, metalness: 0.1 });
-    const matL1 = new THREE.MeshStandardMaterial({ color: 0x0e4429, roughness: 0.7, metalness: 0.3 });
-    const matL2 = new THREE.MeshStandardMaterial({ color: 0x006d32, roughness: 0.5, metalness: 0.4 });
-    const matL3 = new THREE.MeshStandardMaterial({ color: 0x26a641, roughness: 0.3, metalness: 0.6, emissive: 0x003810, emissiveIntensity: 0.4 });
-    const matL4 = new THREE.MeshStandardMaterial({ color: 0x39d353, roughness: 0.2, metalness: 0.7, emissive: 0x00f0ff, emissiveIntensity: 0.8 });
+    const cellW = 0.84;
+    const cellD = 0.84;
+    const gap = 0.16;
 
-    const totalWeeks = Math.min(weeks.length, 53);
-    const originX = -(totalWeeks * 0.95) / 2;
-    const originZ = -(7 * 0.95) / 2;
+    const startX = -((numWeeks * (cellW + gap)) / 2) + 1.2;
+    const startZ = -((daysPerWeek * (cellD + gap)) / 2);
 
-    this.highPoints = [];
+    // Palette: Crisp, clear, high-contrast like 3D Contrib + PUBG Containers
+    const matEmptyPad = new THREE.MeshStandardMaterial({
+      color: 0x334155, // Visible slate pad for 0-commit days
+      roughness: 0.7,
+      metalness: 0.25
+    });
 
-    for (let w = 0; w < totalWeeks; w++) {
-      const days = weeks[w].contributionDays || [];
-      for (let d = 0; d < days.length; d++) {
+    const matGreen = new THREE.MeshStandardMaterial({
+      color: 0x16a34a, // Vibrant Emerald Military Container
+      roughness: 0.5,
+      metalness: 0.4
+    });
+
+    const matBlue = new THREE.MeshStandardMaterial({
+      color: 0x2563eb, // Georgopol Cobalt Blue Container
+      roughness: 0.45,
+      metalness: 0.45
+    });
+
+    const matOrange = new THREE.MeshStandardMaterial({
+      color: 0xea580c, // Hazard Amber Container
+      roughness: 0.45,
+      metalness: 0.45
+    });
+
+    const matRed = new THREE.MeshStandardMaterial({
+      color: 0xdc2626, // Care Package Red Crate
+      roughness: 0.5,
+      metalness: 0.35
+    });
+
+    const matTarpBlue = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8, // Care Package Blue Tarp Top
+      roughness: 0.6,
+      metalness: 0.2
+    });
+
+    this.hotSpots = [];
+
+    for (let w = 0; w < numWeeks; w++) {
+      const week = weeks[w];
+      const days = week ? week.contributionDays || [] : [];
+
+      for (let d = 0; d < 7; d++) {
         const day = days[d];
-        const count = day.contributionCount || 0;
+        const count = day ? day.contributionCount || 0 : 0;
+        const level = day ? day.contributionLevel : 'NONE';
 
-        let mat = matEmpty;
-        let baseHeight = 0.18;
+        const posX = startX + w * (cellW + gap);
+        const posZ = startZ + d * (cellD + gap);
 
-        if (count > 0) {
-          baseHeight = 0.4 + Math.log2(count + 1) * 0.65;
-          if (day.contributionLevel === 'FOURTH_QUARTILE' || count >= 5) mat = matL4;
-          else if (day.contributionLevel === 'THIRD_QUARTILE' || count >= 3) mat = matL3;
-          else if (day.contributionLevel === 'SECOND_QUARTILE' || count >= 2) mat = matL2;
-          else mat = matL1;
-        }
+        if (count === 0 && level === 'NONE') {
+          // 0 Commits: Raised, clearly visible concrete base tile with dark border
+          const padGeo = new THREE.BoxGeometry(cellW, 0.1, cellD);
+          const pad = new THREE.Mesh(padGeo, matEmptyPad);
+          pad.position.set(posX, 0.05, posZ);
+          pad.receiveShadow = true;
+          this.scene.add(pad);
+        } else {
+          // Active Commits: Extruded PUBG Shipping Containers
+          const height = Math.min(4.2, 1.0 + Math.log2(count + 1) * 0.9);
 
-        const mesh = new THREE.Mesh(blockGeo, mat);
-        const posX = originX + w * 0.95;
-        const posZ = originZ + d * 0.95;
+          const group = new THREE.Group();
+          group.position.set(posX, 0, posZ);
 
-        mesh.scale.set(1, baseHeight, 1);
-        mesh.position.set(posX, baseHeight / 2, posZ);
-        mesh.castShadow = count > 0;
-        mesh.receiveShadow = true;
+          let containerMat = matGreen;
+          if (count >= 10) containerMat = matRed;
+          else if (count >= 5) containerMat = matOrange;
+          else if (count >= 2) containerMat = matBlue;
 
-        this.scene.add(mesh);
-        this.blocks.push({ mesh, posX, posZ, baseHeight, count });
+          // Main Container Box
+          const boxGeo = new THREE.BoxGeometry(cellW, height, cellD);
+          const box = new THREE.Mesh(boxGeo, containerMat);
+          box.position.y = height / 2;
+          box.castShadow = true;
+          box.receiveShadow = true;
+          group.add(box);
 
-        if (count >= 2) {
-          this.highPoints.push(new THREE.Vector3(posX, baseHeight, posZ));
+          // Corrugated Steel Side Ribs
+          for (let r = -1; r <= 1; r++) {
+            const ribGeo = new THREE.BoxGeometry(0.04, height * 0.94, cellD * 0.88);
+            const ribMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+            const rib = new THREE.Mesh(ribGeo, ribMat);
+            rib.position.set(r * 0.25, height / 2, 0);
+            group.add(rib);
+          }
+
+          // Top Surface Corner Locks (8 ISO container casting lugs)
+          const cornerGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+          const cornerMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 });
+          [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([cx, cz]) => {
+            const cMesh = new THREE.Mesh(cornerGeo, cornerMat);
+            cMesh.position.set(cx * (cellW/2 - 0.06), height + 0.04, cz * (cellD/2 - 0.06));
+            group.add(cMesh);
+          });
+
+          // Level 3 Care Package Airdrop (count >= 10)
+          if (count >= 10) {
+            const tarpGeo = new THREE.BoxGeometry(cellW * 1.04, 0.22, cellD * 1.04);
+            const tarp = new THREE.Mesh(tarpGeo, matTarpBlue);
+            tarp.position.y = height + 0.11;
+            tarp.castShadow = true;
+            group.add(tarp);
+
+            // Glowing Red Signal Flare Smoke
+            const smokeGeo = new THREE.CylinderGeometry(0.1, 0.4, 2.2, 8);
+            const smokeMat = new THREE.MeshStandardMaterial({
+              color: 0xef4444,
+              transparent: true,
+              opacity: 0.55,
+              emissive: 0xef4444,
+              emissiveIntensity: 1.2
+            });
+            const smoke = new THREE.Mesh(smokeGeo, smokeMat);
+            smoke.position.set(0, height + 1.2, 0);
+            group.add(smoke);
+          }
+
+          this.scene.add(group);
+          this.hotSpots.push(new THREE.Vector3(posX, height, posZ));
         }
       }
     }
+
+    // Add Tactical Tactical Cover Crates for the Soldiers
+    this.buildTacticalCover();
   }
 
-  createProceduralSoldier(squadColor, isLeader = true) {
-    const soldier = new THREE.Group();
+  buildTacticalCover() {
+    // Stacked Georgopol Shipping Containers near the frontline
+    const createCoverStack = (x, z, colorHex) => {
+      const g = new THREE.Group();
+      g.position.set(x, 0, z);
 
-    // Palette
-    const armorColor = squadColor === 'blue' ? 0x1e293b : 0x27272a;
-    const accentColor = squadColor === 'blue' ? 0x00f0ff : 0xf59e0b;
+      const mat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.5,
+        metalness: 0.4
+      });
 
-    // Materials
-    const bodyMat = new THREE.MeshStandardMaterial({ color: armorColor, roughness: 0.7, metalness: 0.3 });
-    const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8, metalness: 0.5 });
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.6 });
-    const visorMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.2, metalness: 0.9, emissive: accentColor, emissiveIntensity: 0.6 });
-    const gunMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.4, metalness: 0.8 });
+      // Bottom Container
+      const c1 = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 3.2), mat);
+      c1.position.y = 0.7;
+      c1.castShadow = true;
+      c1.receiveShadow = true;
+      g.add(c1);
 
-    // 1. Torso & Tactical Vest
-    const torsoGeo = new THREE.BoxGeometry(0.7, 0.9, 0.45);
-    const torso = new THREE.Mesh(torsoGeo, bodyMat);
-    torso.position.y = 1.35;
-    torso.castShadow = true;
-    soldier.add(torso);
+      // Top Container
+      const c2 = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.4, 3.2), mat);
+      c2.position.set(0.1, 2.1, 0.2);
+      c2.castShadow = true;
+      c2.receiveShadow = true;
+      g.add(c2);
 
-    const vestGeo = new THREE.BoxGeometry(0.76, 0.7, 0.52);
-    const vest = new THREE.Mesh(vestGeo, vestMat);
-    vest.position.y = 1.35;
-    vest.castShadow = true;
-    soldier.add(vest);
+      this.scene.add(g);
+    };
 
-    // Ammo Pouches on Plate Carrier
-    for (let p = -1; p <= 1; p++) {
-      const pouchGeo = new THREE.BoxGeometry(0.18, 0.25, 0.12);
-      const pouch = new THREE.Mesh(pouchGeo, vestMat);
-      pouch.position.set(p * 0.22, 1.25, 0.3);
-      soldier.add(pouch);
-    }
-
-    // 2. Level-3 Tactical Helmet & Visor
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 2.05, 0);
-
-    const headGeo = new THREE.SphereGeometry(0.28, 16, 16);
-    const head = new THREE.Mesh(headGeo, skinMat);
-    headGroup.add(head);
-
-    // Spetsnaz/Altyn Helmet shell
-    const helmetGeo = new THREE.SphereGeometry(0.33, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.65);
-    const helmet = new THREE.Mesh(helmetGeo, vestMat);
-    helmet.rotation.x = -0.15;
-    headGroup.add(helmet);
-
-    // Glowing Tactical Visor / NVG slit
-    const visorGeo = new THREE.BoxGeometry(0.38, 0.1, 0.18);
-    const visor = new THREE.Mesh(visorGeo, visorMat);
-    visor.position.set(0, 0, 0.25);
-    headGroup.add(visor);
-
-    soldier.add(headGroup);
-    soldier.headGroup = headGroup;
-
-    // 3. Right Arm + Assault Rifle
-    const rightArmGroup = new THREE.Group();
-    rightArmGroup.position.set(0.45, 1.65, 0);
-
-    const armGeo = new THREE.CylinderGeometry(0.1, 0.09, 0.7);
-    const armR = new THREE.Mesh(armGeo, bodyMat);
-    armR.position.y = -0.3;
-    armR.rotation.x = Math.PI / 4;
-    rightArmGroup.add(armR);
-
-    // Assault Rifle (M416 / Beryl style)
-    const rifle = new THREE.Group();
-    rifle.position.set(0, -0.45, 0.45);
-
-    const receiverGeo = new THREE.BoxGeometry(0.12, 0.18, 0.95);
-    const receiver = new THREE.Mesh(receiverGeo, gunMat);
-    rifle.add(receiver);
-
-    const barrelGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.65);
-    const barrel = new THREE.Mesh(barrelGeo, gunMat);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.02, 0.65);
-    rifle.add(barrel);
-
-    // Suppressor
-    const supGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.28);
-    const suppressor = new THREE.Mesh(supGeo, gunMat);
-    suppressor.rotation.x = Math.PI / 2;
-    suppressor.position.set(0, 0.02, 1.05);
-    rifle.add(suppressor);
-
-    // Holographic Sight
-    const sightGeo = new THREE.BoxGeometry(0.08, 0.1, 0.16);
-    const sight = new THREE.Mesh(sightGeo, visorMat);
-    sight.position.set(0, 0.14, 0.1);
-    rifle.add(sight);
-
-    rightArmGroup.add(rifle);
-    soldier.add(rightArmGroup);
-    soldier.rightArm = rightArmGroup;
-    soldier.muzzlePoint = new THREE.Vector3(0, 0.02, 1.25);
-
-    // 4. Left Arm (Supporting Rifle)
-    const leftArmGroup = new THREE.Group();
-    leftArmGroup.position.set(-0.45, 1.65, 0);
-    const armL = new THREE.Mesh(armGeo, bodyMat);
-    armL.position.set(0.15, -0.28, 0.3);
-    armL.rotation.x = Math.PI / 3;
-    armL.rotation.z = -Math.PI / 6;
-    leftArmGroup.add(armL);
-    soldier.add(leftArmGroup);
-    soldier.leftArm = leftArmGroup;
-
-    // 5. Lower Body (Tactical Combat Crouch)
-    const legGeo = new THREE.CylinderGeometry(0.14, 0.12, 0.85);
-    const legR = new THREE.Mesh(legGeo, bodyMat);
-    legR.position.set(0.24, 0.5, 0.1);
-    legR.rotation.x = -Math.PI / 6;
-    soldier.add(legR);
-
-    const legL = new THREE.Mesh(legGeo, bodyMat);
-    legL.position.set(-0.24, 0.45, -0.15);
-    legL.rotation.x = Math.PI / 4;
-    soldier.add(legL);
-
-    soldier.scale.set(0.9, 0.9, 0.9);
-    return soldier;
+    // Blue Cover near Soldier A
+    createCoverStack(-7.2, 1.2, 0x1d4ed8);
+    // Red Cover near Soldier B
+    createCoverStack(7.2, -1.0, 0xb91c1c);
   }
 
-  buildSoldierRigs() {
-    // Soldier A (Blue Squad - Left side high-cluster cover)
-    this.soldierA = this.createProceduralSoldier('blue');
-    this.soldierA.position.set(-14, 0, 1.5);
-    this.soldierA.rotation.y = Math.PI / 3; // Facing toward right
-    this.scene.add(this.soldierA);
+  loadSoldiers() {
+    const loader = new GLTFLoader();
+    this.soldiersReady = false;
 
-    // Soldier B (Amber Squad - Right side tactical cover)
-    this.soldierB = this.createProceduralSoldier('amber');
-    this.soldierB.position.set(13, 0, -2.5);
-    this.soldierB.rotation.y = -Math.PI * 0.7; // Facing toward left
-    this.scene.add(this.soldierB);
+    // Position Soldiers at the frontline taking cover
+    this.posA = new THREE.Vector3(-6.0, 0, 1.6);
+    this.posB = new THREE.Vector3(6.0, 0, -1.2);
+
+    loader.load(
+      './assets/models/soldier.glb',
+      (gltf) => {
+        console.log('Soldier GLB loaded successfully!');
+        const modelA = gltf.scene;
+        modelA.scale.set(1.5, 1.5, 1.5);
+        modelA.position.copy(this.posA);
+        modelA.rotation.y = Math.PI / 2.1; // Facing toward Soldier B
+
+        modelA.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.material) {
+              child.material.roughness = 0.6;
+            }
+          }
+        });
+
+        this.equipTacticalGear(modelA, 'blue');
+        this.scene.add(modelA);
+
+        const mixerA = new THREE.AnimationMixer(modelA);
+        const animA = gltf.animations.find(a => a.name === 'Run') || gltf.animations[0];
+        if (animA) {
+          const actionA = mixerA.clipAction(animA);
+          actionA.play();
+        }
+        this.mixers.push(mixerA);
+        this.soldierA = modelA;
+
+        // Soldier B (Red Squad Enemy Operator)
+        const modelB = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(gltf.scene) : modelA.clone();
+        modelB.scale.set(1.5, 1.5, 1.5);
+        modelB.position.copy(this.posB);
+        modelB.rotation.y = -Math.PI / 2.1; // Facing toward Soldier A
+
+        modelB.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.material) {
+              child.material = child.material.clone();
+              child.material.color.set(0x9333ea);
+            }
+          }
+        });
+
+        this.equipTacticalGear(modelB, 'red');
+        this.scene.add(modelB);
+
+        const mixerB = new THREE.AnimationMixer(modelB);
+        const animB = gltf.animations.find(a => a.name === 'Walk') || gltf.animations[0];
+        if (animB) {
+          const actionB = mixerB.clipAction(animB);
+          actionB.play();
+        }
+        this.mixers.push(mixerB);
+        this.soldierB = modelB;
+
+        this.soldiersReady = true;
+      },
+      undefined,
+      (err) => {
+        console.warn('Fallback to procedural rig:', err);
+        this.buildProceduralSoldiers();
+      }
+    );
   }
 
-  buildParticleSystems() {
-    // 1. Tracers Pool
-    this.tracers = [];
-    const tracerGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.4);
-    tracerGeo.rotateX(Math.PI / 2);
-    const matTracerA = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-    const matTracerB = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+  equipTacticalGear(soldierGroup, squad) {
+    // Spetsnaz Level 3 Altyn Helmet with Visor
+    const helmetGroup = new THREE.Group();
+    helmetGroup.position.set(0, 1.95, 0);
 
-    for (let i = 0; i < 16; i++) {
-      const mesh = new THREE.Mesh(tracerGeo, i % 2 === 0 ? matTracerA : matTracerB);
-      mesh.visible = false;
-      this.scene.add(mesh);
-      this.tracers.push(mesh);
-    }
-
-    // 2. Spark Debris Particles
-    this.sparkCount = 80;
-    const sparkGeo = new THREE.BufferGeometry();
-    const positions = new Float32Array(this.sparkCount * 3);
-    sparkGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-    const sparkMat = new THREE.PointsMaterial({
-      color: 0xffe066,
-      size: 0.18,
-      transparent: true,
-      blending: THREE.AdditiveBlending
+    const helmetMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.65,
+      metalness: 0.6
     });
 
-    this.sparks = new THREE.Points(sparkGeo, sparkMat);
-    this.scene.add(this.sparks);
-    this.sparkPositions = positions;
+    const visorColor = squad === 'blue' ? 0x00f0ff : 0xf59e0b;
+    const visorMat = new THREE.MeshStandardMaterial({
+      color: visorColor,
+      emissive: visorColor,
+      emissiveIntensity: 1.0,
+      roughness: 0.2
+    });
+
+    const shellGeo = new THREE.SphereGeometry(0.38, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.7);
+    const shell = new THREE.Mesh(shellGeo, helmetMat);
+    helmetGroup.add(shell);
+
+    const visorGeo = new THREE.BoxGeometry(0.38, 0.14, 0.24);
+    const visor = new THREE.Mesh(visorGeo, visorMat);
+    visor.position.set(0, -0.05, 0.27);
+    helmetGroup.add(visor);
+
+    soldierGroup.add(helmetGroup);
+
+    // M416 / Assault Rifle with Red Dot Sight & Suppressor
+    const gunGroup = new THREE.Group();
+    gunGroup.position.set(0.38, 1.35, 0.5);
+
+    const gunMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.85 });
+    const bodyGeo = new THREE.BoxGeometry(0.12, 0.18, 0.85);
+    const body = new THREE.Mesh(bodyGeo, gunMat);
+    gunGroup.add(body);
+
+    const barrelGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.55);
+    const barrel = new THREE.Mesh(barrelGeo, gunMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.02, 0.6);
+    gunGroup.add(barrel);
+
+    const supGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.28);
+    const suppressor = new THREE.Mesh(supGeo, gunMat);
+    suppressor.rotation.x = Math.PI / 2;
+    suppressor.position.set(0, 0.02, 0.95);
+    gunGroup.add(suppressor);
+
+    soldierGroup.add(gunGroup);
+  }
+
+  buildProceduralSoldiers() {
+    const buildRig = (pos, squad, rotY) => {
+      const g = new THREE.Group();
+      g.position.copy(pos);
+      g.rotation.y = rotY;
+
+      const bodyMat = new THREE.MeshStandardMaterial({ color: squad === 'blue' ? 0x1e3a8a : 0x7f1d1d, roughness: 0.6 });
+      const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8, metalness: 0.5 });
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.45), bodyMat);
+      torso.position.y = 1.2;
+      torso.castShadow = true;
+      g.add(torso);
+
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.72, 0.52), vestMat);
+      vest.position.y = 1.2;
+      vest.castShadow = true;
+      g.add(vest);
+
+      this.equipTacticalGear(g, squad);
+      this.scene.add(g);
+      return g;
+    };
+
+    this.soldierA = buildRig(this.posA, 'blue', Math.PI / 2.1);
+    this.soldierB = buildRig(this.posB, 'red', -Math.PI / 2.1);
+    this.soldiersReady = true;
+  }
+
+  buildCombatFx() {
+    // Tracer Bullet Streaks
+    const tracerGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.5, 6);
+    tracerGeo.rotateX(Math.PI / 2);
+
+    this.tracers = [];
+    for (let i = 0; i < 8; i++) {
+      const isBlue = i % 2 === 0;
+      const color = isBlue ? 0x38bdf8 : 0xf59e0b;
+      const mat = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.95
+      });
+      const mesh = new THREE.Mesh(tracerGeo, mat);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.tracers.push({ mesh, active: false, t: 0 });
+    }
   }
 
   seek(timeInSeconds) {
-    const loopDuration = 6.0;
-    const t = (timeInSeconds % loopDuration);
+    const t = timeInSeconds % 6.0;
 
-    // Phase 1: Soldier A bursts fire (0.5s - 2.2s)
-    const isFireA = (t >= 0.6 && t <= 1.8) && (Math.sin(t * 36) > 0.2);
-    // Phase 2: Soldier B returns fire (3.2s - 4.6s)
-    const isFireB = (t >= 3.2 && t <= 4.5) && (Math.sin(t * 34) > 0.2);
-
-    // Soldier A Animation Pose
-    if (t < 0.4 || t > 5.2) {
-      // Duck behind cover
-      this.soldierA.position.y = -0.35;
-      this.soldierA.rightArm.rotation.x = -Math.PI / 6;
-      this.soldierA.headGroup.rotation.x = 0.2;
-    } else {
-      // Peek & Aim
-      this.soldierA.position.y = 0;
-      this.soldierA.rightArm.rotation.x = Math.sin(t * 8) * 0.04;
-      this.soldierA.headGroup.rotation.x = 0;
+    if (this.mixers.length > 0) {
+      this.mixers.forEach(mixer => mixer.setTime(t));
     }
 
-    // Soldier B Animation Pose
-    if (t >= 1.0 && t <= 2.8) {
-      // Under incoming fire - take cover
-      this.soldierB.position.y = -0.4;
-      this.soldierB.rightArm.rotation.x = -Math.PI / 5;
+    // Firing Windows
+    const aFiring = (t >= 0.4 && t <= 1.8) || (t >= 3.2 && t <= 4.6);
+    const bFiring = (t >= 1.6 && t <= 3.0) || (t >= 4.4 && t <= 5.8);
+
+    const burstCycleA = Math.floor(t * 12) % 3 === 0;
+    const burstCycleB = Math.floor(t * 10) % 3 === 0;
+
+    // Soldier A Muzzle Flash
+    if (aFiring && burstCycleA) {
+      this.muzzleLightA.intensity = 10.0;
+      this.muzzleLightA.position.set(this.posA.x + 1.2, 1.4, this.posA.z + 0.5);
     } else {
-      // Peek & Return Fire
-      this.soldierB.position.y = 0;
-      this.soldierB.rightArm.rotation.x = Math.sin(t * 7) * 0.04;
+      this.muzzleLightA.intensity = 0;
     }
 
-    // Muzzle Lights
-    if (isFireA) {
-      this.muzzleA.intensity = 15;
-      this.muzzleA.position.copy(this.soldierA.position).add(new THREE.Vector3(1, 1.4, 0.8));
+    // Soldier B Muzzle Flash
+    if (bFiring && burstCycleB) {
+      this.muzzleLightB.intensity = 10.0;
+      this.muzzleLightB.position.set(this.posB.x - 1.2, 1.4, this.posB.z - 0.5);
     } else {
-      this.muzzleA.intensity = 0;
+      this.muzzleLightB.intensity = 0;
     }
 
-    if (isFireB) {
-      this.muzzleB.intensity = 15;
-      this.muzzleB.position.copy(this.soldierB.position).add(new THREE.Vector3(-1, 1.4, -0.6));
-    } else {
-      this.muzzleB.intensity = 0;
-    }
-
-    // Tracer Bullet Choreography
-    const startA = this.soldierA.position.clone().add(new THREE.Vector3(0.5, 1.4, 0.5));
-    const targetB = this.soldierB.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-
-    const startB = this.soldierB.position.clone().add(new THREE.Vector3(-0.5, 1.4, -0.5));
-    const targetA = this.soldierA.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-
-    // Update active tracers
+    // Tracers
     this.tracers.forEach((tracer, idx) => {
-      let active = false;
-      if (idx < 8) {
-        // Soldier A Tracers
-        const cycle = ((t * 4 + idx * 0.3) % 2.5);
-        if (cycle < 1.0 && t >= 0.5 && t <= 2.0) {
-          active = true;
-          tracer.position.lerpVectors(startA, targetB, cycle);
-          tracer.lookAt(targetB);
-        }
+      const phase = (t + idx * 0.75) % 3.0;
+      if (phase < 0.65) {
+        tracer.mesh.visible = true;
+        const progress = phase / 0.65;
+        const isFromA = idx % 2 === 0;
+        const start = isFromA ? this.posA : this.posB;
+        const target = isFromA ? this.posB : this.posA;
+
+        tracer.mesh.position.lerpVectors(
+          new THREE.Vector3(start.x, 1.35, start.z),
+          new THREE.Vector3(target.x, 1.3, target.z),
+          progress
+        );
+        tracer.mesh.lookAt(target.x, 1.3, target.z);
       } else {
-        // Soldier B Tracers
-        const cycle = (((t - 2.8) * 4 + idx * 0.25) % 2.5);
-        if (cycle < 1.0 && t >= 3.0 && t <= 4.8) {
-          active = true;
-          tracer.position.lerpVectors(startB, targetA, cycle);
-          tracer.lookAt(targetA);
-        }
+        tracer.mesh.visible = false;
       }
-      tracer.visible = active;
     });
-
-    // Particle Impact Sparks
-    const pos = this.sparkPositions;
-    for (let i = 0; i < this.sparkCount; i++) {
-      const idx = i * 3;
-      if (isFireA || isFireB) {
-        const baseTarget = isFireA ? targetB : targetA;
-        pos[idx] = baseTarget.x + (Math.random() - 0.5) * 1.5;
-        pos[idx + 1] = Math.max(0.1, baseTarget.y + (Math.random() - 0.5) * 1.2);
-        pos[idx + 2] = baseTarget.z + (Math.random() - 0.5) * 1.5;
-      } else {
-        pos[idx + 1] = -100; // hide below ground
-      }
-    }
-    this.sparks.geometry.attributes.position.needsUpdate = true;
-
-    // Subtle breathing camera micro-panning
-    const camAngle = 0.785 + Math.sin(t * (Math.PI * 2 / loopDuration)) * 0.02;
-    const camDist = 38;
-    this.camera.position.x = Math.sin(camAngle) * camDist;
-    this.camera.position.z = Math.cos(camAngle) * camDist;
-    this.camera.lookAt(0, 0, 0);
 
     this.renderer.render(this.scene, this.camera);
   }

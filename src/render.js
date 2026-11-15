@@ -29,7 +29,9 @@ function startServer() {
         '.js': 'text/javascript',
         '.json': 'application/json',
         '.png': 'image/png',
-        '.css': 'text/css'
+        '.css': 'text/css',
+        '.glb': 'model/gltf-binary',
+        '.gltf': 'model/gltf+json'
       };
 
       res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
