@@ -1,0 +1,16 @@
+{
+  "name": "pubg-github-contrib-arena",
+  "version": "1.0.0",
+  "description": "3D PUBG-style GitHub contribution battle arena with deterministic Three.js renderer",
+  "main": "src/render.js",
+  "type": "module",
+  "scripts": {
+    "fetch-data": "node src/fetchContributions.js",
+    "render": "node src/render.js",
+    "build": "node src/fetchContributions.js && node src/render.js"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "puppeteer": "^23.8.0"
+  }
+}
